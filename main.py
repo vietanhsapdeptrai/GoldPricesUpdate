@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.parse
 import urllib.request
 from flask import Flask, redirect, render_template_string, request, url_for
 
@@ -7,8 +8,17 @@ app = Flask(__name__)
 
 DATA_FILE = 'data.json'
 CONFIG_FILE = 'config.json'
+
+# ===================================================
+# THÔNG TIN BẢO MẬT & KẾT NỐI
+# ===================================================
+# 1. Pushover Credentials (Dành cho iPhone)
+PUSHOVER_USER_KEY = 'urkreqgfxzi1vxj6cya3vhfdkiiqq6'
+PUSHOVER_APP_TOKEN = 'akp3knry9sbuubxumifqbu21etmux6'
+
+# 2. Telegram Credentials
 BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
-ALLOWED_CHAT_ID = '5333698491'  # Chỉ ID này mới có quyền tương tác với bot
+ALLOWED_CHAT_ID = '5333698491'
 
 
 def load_data():
@@ -33,10 +43,11 @@ def save_data(assets, config):
     json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def generate_report():
+def generate_reports():
   assets, config = load_data()
   if not assets:
-    return '⚠️ Chưa có dữ liệu mua vàng nào trong danh mục.'
+    msg_short = '⚠️ Chưa có dữ liệu mua vàng nào trong danh mục.'
+    return msg_short, msg_short
 
   current_price = config.get('manual_price', 0)
   if current_price <= 0:
@@ -48,24 +59,34 @@ def generate_report():
   total_profit = total_val - total_cost
   margin = (total_profit / total_cost * 100) if total_cost > 0 else 0
 
-  details = ''
+  # Dạng văn bản có Markdown (cho Telegram)
+  details_md = ''
+  # Dạng văn bản thuần (cho Pushover)
+  details_plain = ''
+
   for item in assets:
     cost = item['quantity'] * item['buy_price']
     val = item['quantity'] * current_price
     profit = val - cost
     icon = '🟢' if profit >= 0 else '🔴'
-    details += (
+
+    details_md += (
         f"▫️ *{item['date']}*: `{item['quantity']} chỉ`\n   • Lời/Lãi: {icon}"
         f' *{profit:+,.0f} đ*\n'
+    )
+    details_plain += (
+        f"▫️ {item['date']}: {item['quantity']} chỉ\n   Lời/Lãi: {icon}"
+        f' {profit:+,.0f} đ\n'
     )
 
   icon_total = '🎉' if total_profit >= 0 else '📉'
 
-  msg = (
+  # Message Telegram
+  msg_telegram = (
       '🏆 *BÁO CÁO TÀI SẢN VÀNG 9999* 🏆\n'
       '───────────────────────\n'
       f'💵 *Giá hiện tại:* `{current_price:,.0f} VNĐ/chỉ`\n\n'
-      f'📋 *CHI TIẾT:*\n{details}'
+      f'📋 *CHI TIẾT:*\n{details_md}'
       '───────────────────────\n'
       '💼 *TỔNG KẾT DANH MỤC:*\n'
       f'• Tổng số lượng: *{total_qty:.1f} chỉ*\n'
@@ -74,23 +95,61 @@ def generate_report():
       f'• Tổng Lời/Lãi: {icon_total} *{total_profit:+,.0f} VNĐ*'
       f' (`{margin:+.2f}%`)\n'
   )
-  return msg
 
-
-def send_telegram_msg(chat_id_to_send, text_content):
-  tele_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-  payload = json.dumps({
-      'chat_id': chat_id_to_send,
-      'text': text_content,
-      'parse_mode': 'Markdown',
-  }).encode('utf-8')
-  tele_req = urllib.request.Request(
-      tele_url, data=payload, headers={'Content-Type': 'application/json'}
+  # Message Pushover
+  msg_pushover = (
+      f'💵 Giá hiện tại: {current_price:,.0f} đ/chỉ\n\n'
+      f'📋 CHI TIẾT:\n{details_plain}'
+      f'───────────────────────\n'
+      f'💼 TỔNG KẾT DANH MỤC:\n'
+      f'• Số lượng: {total_qty:.1f} chỉ\n'
+      f'• Tổng vốn: {total_cost:,.0f} VNĐ\n'
+      f'• Giá trị hiện tại: {total_val:,.0f} VNĐ\n'
+      f'• Lời/Lãi: {icon_total} {total_profit:+,.0f} VNĐ ({margin:+.2f}%)'
   )
-  with urllib.request.urlopen(tele_req, timeout=10) as res:
-    pass
+
+  return msg_telegram, msg_pushover
 
 
+# GỬI PUSHOVER
+def send_pushover(title, text):
+  try:
+    url = 'https://api.pushover.net/1/messages.json'
+    payload = urllib.parse.urlencode({
+        'token': PUSHOVER_APP_TOKEN,
+        'user': PUSHOVER_USER_KEY,
+        'title': title,
+        'message': text,
+        'sound': 'cashregister',
+        'url': 'https://goldpricesupdate.onrender.com',
+        'url_title': 'Mở Web Quản Lý Vàng',
+    }).encode('utf-8')
+    req = urllib.request.Request(url, data=payload)
+    with urllib.request.urlopen(req, timeout=10) as res:
+      pass
+  except Exception as e:
+    print(f'Lỗi gửi Pushover: {e}')
+
+
+# GỬI TELEGRAM
+def send_telegram(chat_id_to_send, text):
+  try:
+    tele_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+    payload = json.dumps({
+        'chat_id': chat_id_to_send,
+        'text': text,
+        'parse_mode': 'Markdown',
+    }).encode('utf-8')
+    tele_req = urllib.request.Request(
+        tele_url, data=payload, headers={'Content-Type': 'application/json'}
+    )
+    with urllib.request.urlopen(tele_req, timeout=10) as res:
+      pass
+  except Exception as e:
+    print(f'Lỗi gửi Telegram: {e}')
+
+
+# HTML TEMPLATE
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -102,7 +161,6 @@ HTML_TEMPLATE = """
 </head>
 <body class="bg-slate-100 min-h-screen p-4 md:p-8 font-sans">
     <div class="max-w-5xl mx-auto space-y-6">
-        
         <div class="bg-white rounded-xl shadow-sm p-6 flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-slate-800">🏆 Quản Lý Tài Sản Vàng 9999</h1>
@@ -227,7 +285,6 @@ HTML_TEMPLATE = """
 """
 
 
-# 1. TRANG CHỦ GIAO DIỆN WEB
 @app.route('/')
 def home():
   assets, config = load_data()
@@ -254,7 +311,6 @@ def home():
   )
 
 
-# 2. XỬ LÝ THÊM LƯỢT MUA
 @app.route('/add', methods=['POST'])
 def add_asset():
   assets, config = load_data()
@@ -270,7 +326,6 @@ def add_asset():
   return redirect(url_for('home'))
 
 
-# 3. XỬ LÝ XÓA LƯỢT MUA
 @app.route('/delete/<int:index>')
 def delete_asset(index):
   assets, config = load_data()
@@ -280,7 +335,6 @@ def delete_asset(index):
   return redirect(url_for('home'))
 
 
-# 4. XỬ LÝ CẬP NHẬT GIÁ
 @app.route('/update_price', methods=['POST'])
 def update_price():
   assets, config = load_data()
@@ -297,42 +351,43 @@ def reset_price():
   return redirect(url_for('home'))
 
 
-# 5. LẮNG NGHE LỆNH TỪ TELEGRAM WEBHOOK (CÓ KHÓA BẢO MẬT CHAT ID)
+# TELEGRAM WEBHOOK
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
   try:
     update = request.get_json(force=True, silent=True) or {}
-
     if 'message' in update:
       message = update['message']
       text = message.get('text', '').strip()
       chat_id = str(message.get('chat', {}).get('id'))
 
       if chat_id != ALLOWED_CHAT_ID:
-        send_telegram_msg(
+        send_telegram(
             chat_id, '⚠️ Rất tiếc, bạn không có quyền truy cập bot này!'
         )
         return 'OK', 200
 
       if text.startswith('/'):
-        report_msg = generate_report()
-        send_telegram_msg(chat_id, report_msg)
-
+        msg_tg, _ = generate_reports()
+        send_telegram(chat_id, msg_tg)
   except Exception as e:
     print(f'Lỗi Webhook: {e}')
 
   return 'OK', 200
 
 
-# 6. DÀNH CHO CRON JOB HÀNG NGÀY
+# CRON CHẠY TỰ ĐỘNG HÀNG NGÀY (GỬI SONG SONG CẢ PUSHOVER & TELEGRAM)
 @app.route('/cron')
 def cron_send():
-  msg = generate_report()
-  try:
-    send_telegram_msg(ALLOWED_CHAT_ID, msg)
-    return '✅ Đã gửi báo cáo giá vàng tới Telegram!'
-  except Exception as e:
-    return f'❌ Lỗi gửi Telegram: {str(e)}'
+  msg_tg, msg_push = generate_reports()
+
+  # 1. Gửi qua Pushover (về iPhone)
+  send_pushover('🏆 BÁO CÁO TÀI SẢN VÀNG', msg_push)
+
+  # 2. Gửi qua Telegram
+  send_telegram(ALLOWED_CHAT_ID, msg_tg)
+
+  return '✅ Đã gửi báo cáo song song tới cả Pushover và Telegram thành công!'
 
 
 if __name__ == '__main__':
