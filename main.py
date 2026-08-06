@@ -20,88 +20,97 @@ BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
 ALLOWED_CHAT_ID = '5333698491'
 
 
-# HÀM TỰ ĐỘNG CÀO GIÁ VÀNG & BẠC TỪ NGUỒN THỊ TRƯỜNG
+# HÀM CÀO GIÁ AN TOÀN (KHÔNG BAO GIỜ GÂY CRASH 500)
 def fetch_live_prices():
-  # Giá mặc định phòng trường hợp mạng lỗi (Vàng: VNĐ/chỉ, Bạc: VNĐ/lượng)
+  # Giá mặc định chuẩn (Vàng: đ/chỉ, Bạc: đ/lượng)
   live_gold = 14270000
-  live_silver = 2247000
+  live_silver = 2235000
 
-  # 1. Fetch Giá Bạc Phú Quý
+  headers = {
+      'User-Agent': (
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          ' (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      )
+  }
+
+  # 1. Fetch Giá Bạc
   try:
     req_silver = urllib.request.Request(
-        'https://phuquy.com.vn/bang-gia/bac',
-        headers={'User-Agent': 'Mozilla/5.0'},
+        'https://phuquy.com.vn/bang-gia/bac', headers=headers
     )
-    with urllib.request.urlopen(req_silver, timeout=5) as res:
+    with urllib.request.urlopen(req_silver, timeout=3) as res:
       html = res.read().decode('utf-8')
-      # Tìm giá bán ra bạc 999
       matches = re.findall(r'(\d{1,2}[\.,]\d{3}[\.,]\d{3})', html)
       if matches:
-        # Lấy giá trị hợp lệ chuyển về số nguyên
-        p_val = int(matches[0].replace('.', '').replace(',', ''))
-        if 1500000 < p_val < 5000000:
-          live_silver = p_val
+        for m in matches:
+          val = int(m.replace('.', '').replace(',', ''))
+          if 1800000 < val < 3500000:
+            live_silver = val
+            break
   except Exception as e:
-    print(f'Lỗi fetch giá Bạc: {e}')
+    print(f'Bỏ qua lỗi fetch Bạc: {e}')
 
-  # 2. Fetch Giá Vàng Phú Quý / SJC
+  # 2. Fetch Giá Vàng
   try:
     req_gold = urllib.request.Request(
-        'https://phuquygroup.vn/giavang', headers={'User-Agent': 'Mozilla/5.0'}
+        'https://phuquygroup.vn/giavang', headers=headers
     )
-    with urllib.request.urlopen(req_gold, timeout=5) as res:
+    with urllib.request.urlopen(req_gold, timeout=3) as res:
       html = res.read().decode('utf-8')
       matches = re.findall(r'(\d{2}[\.,]\d{3}[\.,]\d{3})', html)
       if matches:
-        p_val = int(matches[0].replace('.', '').replace(',', ''))
-        if 8000000 < p_val < 30000000:  # Giá tính theo Chỉ
-          live_gold = p_val
+        for m in matches:
+          val = int(m.replace('.', '').replace(',', ''))
+          if 8000000 < val < 25000000:
+            live_gold = val
+            break
   except Exception as e:
-    print(f'Lỗi fetch giá Vàng: {e}')
+    print(f'Bỏ qua lỗi fetch Vàng: {e}')
 
   return live_gold, live_silver
 
 
 def load_data():
-  if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-      json.dump([], f)
+  assets = []
+  config = {'manual_gold': 0, 'manual_silver': 0}
 
-  if not os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-      json.dump({'manual_gold': 0, 'manual_silver': 0}, f)
+  try:
+    if os.path.exists(DATA_FILE):
+      with open(DATA_FILE, 'r', encoding='utf-8') as f:
+        assets = json.load(f)
+  except Exception:
+    assets = []
 
-  with open(DATA_FILE, 'r', encoding='utf-8') as f:
-    assets = json.load(f)
-  with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-    config = json.load(f)
+  try:
+    if os.path.exists(CONFIG_FILE):
+      with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+  except Exception:
+    config = {'manual_gold': 0, 'manual_silver': 0}
 
   return assets, config
 
 
 def save_data(assets, config):
-  with open(DATA_FILE, 'w', encoding='utf-8') as f:
-    json.dump(assets, f, ensure_ascii=False, indent=2)
-  with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-    json.dump(config, f, ensure_ascii=False, indent=2)
+  try:
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+      json.dump(assets, f, ensure_ascii=False, indent=2)
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+      json.dump(config, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f'Lỗi ghi file: {e}')
 
 
 def get_effective_prices(config):
   live_gold, live_silver = fetch_live_prices()
 
-  # Nếu người dùng có nhập giá thủ công (> 0) thì dùng giá thủ công, ngược lại dùng giá tự động
-  gold_price = (
-      config.get('manual_gold', 0)
-      if config.get('manual_gold', 0) > 0
-      else live_gold
-  )
-  silver_price = (
-      config.get('manual_silver', 0)
-      if config.get('manual_silver', 0) > 0
-      else live_silver
-  )
+  gold_p = config.get('manual_gold', 0)
+  silver_p = config.get('manual_silver', 0)
 
-  return gold_price, silver_price, live_gold, live_silver
+  gold_price = gold_p if gold_p > 0 else live_gold
+  silver_price = silver_p if silver_p > 0 else live_silver
+
+  return gold_price, silver_price
 
 
 def generate_reports():
@@ -110,7 +119,7 @@ def generate_reports():
     msg_empty = '⚠️ Chưa có dữ liệu mua tài sản nào.'
     return msg_empty, msg_empty
 
-  gold_price, silver_price, _, _ = get_effective_prices(config)
+  gold_price, silver_price = get_effective_prices(config)
 
   total_cost_all = 0
   total_val_all = 0
@@ -190,7 +199,7 @@ def send_pushover(title, text):
         'url_title': 'Mở Web Quản Lý',
     }).encode('utf-8')
     req = urllib.request.Request(url, data=payload)
-    with urllib.request.urlopen(req, timeout=10) as res:
+    with urllib.request.urlopen(req, timeout=5) as res:
       pass
   except Exception as e:
     print(f'Lỗi gửi Pushover: {e}')
@@ -207,7 +216,7 @@ def send_telegram(chat_id_to_send, text):
     tele_req = urllib.request.Request(
         tele_url, data=payload, headers={'Content-Type': 'application/json'}
     )
-    with urllib.request.urlopen(tele_req, timeout=10) as res:
+    with urllib.request.urlopen(tele_req, timeout=5) as res:
       pass
   except Exception as e:
     print(f'Lỗi gửi Telegram: {e}')
@@ -229,7 +238,7 @@ HTML_TEMPLATE = """
             <div>
                 <h1 class="text-2xl font-bold text-slate-800">🏆 Quản Lý Tài Sản Vàng & Bạc</h1>
                 <p class="text-slate-500 text-sm mt-1">
-                    Cập nhật <b>TỰ ĐỘNG</b> theo thời gian thực | Vàng (Chỉ) - Bạc (Lượng)
+                    Vàng (Đơn vị: <b>Chỉ</b>) | Bạc (Đơn vị: <b>Lượng</b>)
                 </p>
             </div>
             
@@ -369,35 +378,38 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def home():
-  assets, config = load_data()
-  gold_price, silver_price, _, _ = get_effective_prices(config)
+  try:
+    assets, config = load_data()
+    gold_price, silver_price = get_effective_prices(config)
 
-  total_cost_all = 0
-  total_val_all = 0
+    total_cost_all = 0
+    total_val_all = 0
 
-  for item in assets:
-    cur_p = gold_price if item.get('type') == 'gold' else silver_price
-    cost = item['quantity'] * item['buy_price']
-    val = item['quantity'] * cur_p
-    total_cost_all += cost
-    total_val_all += val
+    for item in assets:
+      cur_p = gold_price if item.get('type') == 'gold' else silver_price
+      cost = item['quantity'] * item['buy_price']
+      val = item['quantity'] * cur_p
+      total_cost_all += cost
+      total_val_all += val
 
-  total_profit_all = total_val_all - total_cost_all
-  margin_all = (
-      (total_profit_all / total_cost_all * 100) if total_cost_all > 0 else 0
-  )
+    total_profit_all = total_val_all - total_cost_all
+    margin_all = (
+        (total_profit_all / total_cost_all * 100) if total_cost_all > 0 else 0
+    )
 
-  return render_template_string(
-      HTML_TEMPLATE,
-      assets=assets,
-      config=config,
-      gold_price=gold_price,
-      silver_price=silver_price,
-      total_cost_all=total_cost_all,
-      total_val_all=total_val_all,
-      total_profit_all=total_profit_all,
-      margin_all=margin_all,
-  )
+    return render_template_string(
+        HTML_TEMPLATE,
+        assets=assets,
+        config=config,
+        gold_price=gold_price,
+        silver_price=silver_price,
+        total_cost_all=total_cost_all,
+        total_val_all=total_val_all,
+        total_profit_all=total_profit_all,
+        margin_all=margin_all,
+    )
+  except Exception as e:
+    return f'Đã có lỗi xảy ra: {e}', 500
 
 
 @app.route('/add', methods=['POST'])
