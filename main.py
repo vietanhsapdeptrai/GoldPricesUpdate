@@ -94,7 +94,7 @@ def telegram_webhook():
     chat_id = message['chat']['id']
 
     # Kiểm tra nếu tin nhắn là lệnh /check, /gia hoặc /start
-    if text.startswith('/check') or text.startswith('/gia') or text == '/start':
+    if text.startswith('/check') or text.startswith('/taisan') or text == '/start':
       report_msg = generate_report()
       send_telegram_msg(chat_id, report_msg)
 
