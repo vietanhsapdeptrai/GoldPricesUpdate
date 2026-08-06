@@ -13,8 +13,8 @@ CONFIG_FILE = 'config.json'
 # ===================================================
 # THÔNG TIN BẢO MẬT & KẾT NỐI
 # ===================================================
-PUSHOVER_USER_KEY = 'THAY_USER_KEY_PUSHOVER_CUA_BAN'
-PUSHOVER_APP_TOKEN = 'THAY_APP_TOKEN_PUSHOVER_CUA_BAN'
+PUSHOVER_USER_KEY = 'urkreqgfxzi1vxj6cya3vhfdkiiqq6'
+PUSHOVER_APP_TOKEN = 'akp3knry9sbuubxumifqbu21etmux6'
 
 BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
 ALLOWED_CHAT_ID = '5333698491'
