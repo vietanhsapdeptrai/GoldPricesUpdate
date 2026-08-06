@@ -87,16 +87,26 @@ def send_telegram_msg(chat_id_to_send, text_content):
 # WEBHOOK LẮNG NGHE LỆNH TỪ TELEGRAM
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
-  update = request.get_json()
-  if update and 'message' in update:
-    message = update['message']
-    text = message.get('text', '')
-    chat_id = message['chat']['id']
+  try:
+    update = request.get_json(force=True, silent=True) or {}
 
-    # Kiểm tra nếu tin nhắn là lệnh /check, /gia hoặc /start
-    if text.startswith('/check') or text.startswith('/taisan') or text == '/start':
-      report_msg = generate_report()
-      send_telegram_msg(chat_id, report_msg)
+    if 'message' in update:
+      message = update['message']
+      text = message.get('text', '').strip()
+      chat_id = message.get('chat', {}).get('id')
+
+      # Kiểm tra thêm lệnh /taisan
+      if (
+          text.startswith('/check')
+          or text.startswith('/gia')
+          or text.startswith('/taisan')
+          or text.startswith('/start')
+      ):
+        report_msg = generate_report()
+        send_telegram_msg(chat_id, report_msg)
+
+  except Exception as e:
+    print(f'Lỗi Webhook: {e}')
 
   return 'OK', 200
 
