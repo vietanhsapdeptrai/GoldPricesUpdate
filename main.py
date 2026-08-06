@@ -20,9 +20,7 @@ BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
 ALLOWED_CHAT_ID = '5333698491'
 
 
-# HÀM CÀO GIÁ AN TOÀN (KHÔNG BAO GIỜ GÂY CRASH 500)
 def fetch_live_prices():
-  # Giá mặc định chuẩn (Vàng: đ/chỉ, Bạc: đ/lượng)
   live_gold = 14270000
   live_silver = 2235000
 
@@ -33,7 +31,6 @@ def fetch_live_prices():
       )
   }
 
-  # 1. Fetch Giá Bạc
   try:
     req_silver = urllib.request.Request(
         'https://phuquy.com.vn/bang-gia/bac', headers=headers
@@ -50,7 +47,6 @@ def fetch_live_prices():
   except Exception as e:
     print(f'Bỏ qua lỗi fetch Bạc: {e}')
 
-  # 2. Fetch Giá Vàng
   try:
     req_gold = urllib.request.Request(
         'https://phuquygroup.vn/giavang', headers=headers
@@ -124,6 +120,9 @@ def generate_reports():
   total_cost_all = 0
   total_val_all = 0
 
+  gold_profit = 0
+  silver_profit = 0
+
   details_md = ''
   details_plain = ''
 
@@ -136,6 +135,11 @@ def generate_reports():
     cost = item['quantity'] * item['buy_price']
     val = item['quantity'] * cur_price
     profit = val - cost
+
+    if asset_type == 'gold':
+      gold_profit += profit
+    else:
+      silver_profit += profit
 
     total_cost_all += cost
     total_val_all += val
@@ -155,31 +159,39 @@ def generate_reports():
   margin_all = (
       (total_profit_all / total_cost_all * 100) if total_cost_all > 0 else 0
   )
+
+  icon_gold = '🟢' if gold_profit >= 0 else '🔴'
+  icon_silver = '🟢' if silver_profit >= 0 else '🔴'
   icon_total = '🎉' if total_profit_all >= 0 else '📉'
 
   msg_telegram = (
       '🏆 *BÁO CÁO TÀI SẢN VÀNG & BẠC* 🏆\n'
       '───────────────────────\n'
-      f'💵 *Giá Vàng hiện tại:* `{gold_price:,.0f} đ/chỉ`\n'
-      f'⚪ *Giá Bạc hiện tại:* `{silver_price:,.0f} đ/lượng`\n\n'
+      f'💵 *Giá Vàng:* `{gold_price:,.0f} đ/chỉ`\n'
+      f'⚪ *Giá Bạc:* `{silver_price:,.0f} đ/lượng`\n\n'
       f'📋 *CHI TIẾT DANH MỤC:*\n{details_md}'
       '───────────────────────\n'
+      '📊 *TỔNG LÃI TỪNG LOẠI:*\n'
+      f'• Lãi Vàng 9999: {icon_gold} *{gold_profit:+,.0f} VNĐ*\n'
+      f'• Lãi Bạc 999: {icon_silver} *{silver_profit:+,.0f} VNĐ*\n\n'
       '💼 *TỔNG KẾT TOÀN BỘ:*\n'
-      f'• Tổng vốn đầu tư: `{total_cost_all:,.0f} VNĐ`\n'
+      f'• Vốn đầu tư: `{total_cost_all:,.0f} VNĐ`\n'
       f'• Giá trị hiện tại: `{total_val_all:,.0f} VNĐ`\n'
       f'• Tổng Lời/Lãi: {icon_total} *{total_profit_all:+,.0f} VNĐ*'
       f' (`{margin_all:+.2f}%`)\n'
   )
 
   msg_pushover = (
-      f'💵 Giá Vàng: {gold_price:,.0f} đ/chỉ | ⚪ Giá Bạc:'
-      f' {silver_price:,.0f} đ/lượng\n\n'
+      f'💵 Giá Vàng: {gold_price:,.0f} đ | ⚪ Giá Bạc: {silver_price:,.0f} đ\n\n'
       f'📋 CHI TIẾT:\n{details_plain}'
       f'───────────────────────\n'
-      f'💼 TỔNG KẾT DANH MỤC:\n'
+      f'📊 TỔNG LÃI TỪNG LOẠI:\n'
+      f'• Lãi Vàng: {icon_gold} {gold_profit:+,.0f} VNĐ\n'
+      f'• Lãi Bạc: {icon_silver} {silver_profit:+,.0f} VNĐ\n\n'
+      f'💼 TỔNG KẾT:\n'
       f'• Tổng vốn: {total_cost_all:,.0f} VNĐ\n'
       f'• Giá trị hiện tại: {total_val_all:,.0f} VNĐ\n'
-      f'• Lời/Lãi: {icon_total} {total_profit_all:+,.0f} VNĐ'
+      f'• Tổng Lời/Lãi: {icon_total} {total_profit_all:+,.0f} VNĐ'
       f' ({margin_all:+.2f}%)'
   )
 
@@ -268,18 +280,29 @@ HTML_TEMPLATE = """
             </form>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-slate-500">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-amber-500">
+                <span class="text-xs font-semibold text-slate-400 uppercase">Lãi Vàng 9999</span>
+                <p class="text-xl font-bold {% if gold_profit >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %} mt-1">
+                    {% if gold_profit >= 0 %}+{% endif %}{{ "{:,.0f}".format(gold_profit) }} <span class="text-xs">đ</span>
+                </p>
+            </div>
+            
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-slate-400">
+                <span class="text-xs font-semibold text-slate-400 uppercase">Lãi Bạc 999</span>
+                <p class="text-xl font-bold {% if silver_profit >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %} mt-1">
+                    {% if silver_profit >= 0 %}+{% endif %}{{ "{:,.0f}".format(silver_profit) }} <span class="text-xs">đ</span>
+                </p>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-slate-700">
                 <span class="text-xs font-semibold text-slate-400 uppercase">Tổng vốn đầu tư</span>
-                <p class="text-2xl font-bold text-slate-800 mt-1">{{ "{:,.0f}".format(total_cost_all) }} <span class="text-xs text-slate-500">đ</span></p>
+                <p class="text-xl font-bold text-slate-800 mt-1">{{ "{:,.0f}".format(total_cost_all) }} <span class="text-xs text-slate-500">đ</span></p>
             </div>
-            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-indigo-500">
-                <span class="text-xs font-semibold text-slate-400 uppercase">Giá trị hiện tại</span>
-                <p class="text-2xl font-bold text-slate-800 mt-1">{{ "{:,.0f}".format(total_val_all) }} <span class="text-xs text-slate-500">đ</span></p>
-            </div>
+
             <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 {% if total_profit_all >= 0 %}border-emerald-500{% else %}border-rose-500{% endif %}">
-                <span class="text-xs font-semibold text-slate-400 uppercase">Tổng Lời / Lãi</span>
-                <p class="text-2xl font-bold {% if total_profit_all >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %} mt-1">
+                <span class="text-xs font-semibold text-slate-400 uppercase">Tổng Lời / Lãi Gộp</span>
+                <p class="text-xl font-bold {% if total_profit_all >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %} mt-1">
                     {% if total_profit_all >= 0 %}+{% endif %}{{ "{:,.0f}".format(total_profit_all) }} <span class="text-xs">đ</span>
                 </p>
                 <span class="text-xs {% if total_profit_all >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %} font-semibold">
@@ -384,11 +407,21 @@ def home():
 
     total_cost_all = 0
     total_val_all = 0
+    gold_profit = 0
+    silver_profit = 0
 
     for item in assets:
-      cur_p = gold_price if item.get('type') == 'gold' else silver_price
+      asset_type = item.get('type', 'gold')
+      cur_p = gold_price if asset_type == 'gold' else silver_price
       cost = item['quantity'] * item['buy_price']
       val = item['quantity'] * cur_p
+      profit = val - cost
+
+      if asset_type == 'gold':
+        gold_profit += profit
+      else:
+        silver_profit += profit
+
       total_cost_all += cost
       total_val_all += val
 
@@ -403,6 +436,8 @@ def home():
         config=config,
         gold_price=gold_price,
         silver_price=silver_price,
+        gold_profit=gold_profit,
+        silver_profit=silver_profit,
         total_cost_all=total_cost_all,
         total_val_all=total_val_all,
         total_profit_all=total_profit_all,
