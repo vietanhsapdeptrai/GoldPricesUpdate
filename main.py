@@ -83,8 +83,7 @@ def send_telegram_msg(chat_id_to_send, text_content):
   with urllib.request.urlopen(tele_req, timeout=10) as res:
     pass
 
-
-# WEBHOOK LẮNG NGHE LỆNH TỪ TELEGRAM
+# WEBHOOK LẮNG NGHE LỆNH TỪ TELEGRAM (ĐÃ KHÓA BẢO MẬT)
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
   try:
@@ -93,23 +92,27 @@ def telegram_webhook():
     if 'message' in update:
       message = update['message']
       text = message.get('text', '').strip()
-      chat_id = message.get('chat', {}).get('id')
+      chat_id = str(message.get('chat', {}).get('id'))
 
-      # Kiểm tra thêm lệnh /taisan
-      if (
-          text.startswith('/check')
-          or text.startswith('/gia')
-          or text.startswith('/taisan')
-          or text.startswith('/start')
-      ):
+      # 🔒 BẢO MẬT: CHỈ PHẢN HỒI NẾU CHAT_ID KHỚP VỚI ID CỦA BẠN
+      ALLOWED_CHAT_ID = "5333698491"  # ID Telegram cá nhân của bạn
+
+      if chat_id != ALLOWED_CHAT_ID:
+        # Nếu người lạ nhắn tin, bot từ chối phản hồi
+        send_telegram_msg(
+            chat_id, "⚠️ Rất tiếc, bạn không có quyền truy cập bot này!"
+        )
+        return "OK", 200
+
+      # Nếu đúng là bạn nhắn tin:
+      if text.startswith('/'):
         report_msg = generate_report()
         send_telegram_msg(chat_id, report_msg)
 
   except Exception as e:
-    print(f'Lỗi Webhook: {e}')
+    print(f"Lỗi Webhook: {e}")
 
-  return 'OK', 200
-
+  return "OK", 200
 
 # ROUTE CRON HÀNG NGÀY
 @app.route('/cron')
