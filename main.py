@@ -246,7 +246,7 @@ HTML_TEMPLATE = """
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-right">
                     <div class="flex justify-between text-[10px] text-amber-700 font-semibold mb-1 gap-2">
                         <span>GIÁ VÀNG</span>
-                        {% if config.manual_gold > 0 %}<span class="text-rose-500">(Thủ công)</span>{% else %}<span class="text-emerald-600">(Tự động)</span>{% endif %}
+                        {% if config.get('manual_gold', 0) > 0 %}<span class="text-rose-500">(Thủ công)</span>{% else %}<span class="text-emerald-600">(Tự động)</span>{% endif %}
                     </div>
                     <input type="number" name="gold_price" value="{{ gold_price }}" class="w-32 text-right font-bold text-amber-600 bg-transparent focus:outline-none">
                 </div>
@@ -254,14 +254,14 @@ HTML_TEMPLATE = """
                 <div class="bg-slate-100 border border-slate-300 rounded-lg p-2 text-right">
                     <div class="flex justify-between text-[10px] text-slate-600 font-semibold mb-1 gap-2">
                         <span>GIÁ BẠC</span>
-                        {% if config.manual_silver > 0 %}<span class="text-rose-500">(Thủ công)</span>{% else %}<span class="text-emerald-600">(Tự động)</span>{% endif %}
+                        {% if config.get('manual_silver', 0) > 0 %}<span class="text-rose-500">(Thủ công)</span>{% else %}<span class="text-emerald-600">(Tự động)</span>{% endif %}
                     </div>
                     <input type="number" name="silver_price" value="{{ silver_price }}" class="w-32 text-right font-bold text-slate-700 bg-transparent focus:outline-none">
                 </div>
 
                 <div class="flex flex-col gap-1">
                     <button type="submit" class="bg-slate-800 text-white font-medium px-3 py-1.5 rounded-lg text-xs">Set Giá Mới</button>
-                    {% if config.manual_gold > 0 or config.manual_silver > 0 %}
+                    {% if config.get('manual_gold', 0) > 0 or config.get('manual_silver', 0) > 0 %}
                         <a href="/reset_prices" class="text-center text-[11px] text-rose-500 font-semibold hover:underline">Reset Auto</a>
                     {% endif %}
                 </div>
