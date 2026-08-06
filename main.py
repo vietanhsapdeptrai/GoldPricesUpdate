@@ -10,12 +10,8 @@ app = Flask(__name__)
 DATA_FILE = 'data.json'
 CONFIG_FILE = 'config.json'
 
-# ===================================================
-# THÔNG TIN BẢO MẬT & KẾT NỐI
-# ===================================================
 PUSHOVER_USER_KEY = 'urkreqgfxzi1vxj6cya3vhfdkiiqq6'
 PUSHOVER_APP_TOKEN = 'akp3knry9sbuubxumifqbu21etmux6'
-
 BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
 ALLOWED_CHAT_ID = '5333698491'
 
@@ -45,7 +41,7 @@ def fetch_live_prices():
             live_silver = val
             break
   except Exception as e:
-    print(f'Bỏ qua lỗi fetch Bạc: {e}')
+    print(f'Lỗi fetch Bạc: {e}')
 
   try:
     req_gold = urllib.request.Request(
@@ -61,7 +57,7 @@ def fetch_live_prices():
             live_gold = val
             break
   except Exception as e:
-    print(f'Bỏ qua lỗi fetch Vàng: {e}')
+    print(f'Lỗi fetch Vàng: {e}')
 
   return live_gold, live_silver
 
@@ -99,7 +95,6 @@ def save_data(assets, config):
 
 def get_effective_prices(config):
   live_gold, live_silver = fetch_live_prices()
-
   gold_p = config.get('manual_gold', 0)
   silver_p = config.get('manual_silver', 0)
 
@@ -119,7 +114,6 @@ def generate_reports():
 
   total_cost_all = 0
   total_val_all = 0
-
   gold_profit = 0
   silver_profit = 0
 
@@ -201,7 +195,7 @@ def generate_reports():
 def send_pushover(title, text):
   try:
     url = 'https://api.pushover.net/1/messages.json'
-    payload = urllib.parse.urlencode({
+    params = {
         'token': PUSHOVER_APP_TOKEN,
         'user': PUSHOVER_USER_KEY,
         'title': title,
@@ -209,9 +203,14 @@ def send_pushover(title, text):
         'sound': 'cashregister',
         'url': 'https://goldpricesupdate.onrender.com',
         'url_title': 'Mở Web Quản Lý',
-    }).encode('utf-8')
-    req = urllib.request.Request(url, data=payload)
-    with urllib.request.urlopen(req, timeout=5) as res:
+    }
+    payload = urllib.parse.urlencode(params).encode('utf-8')
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+    with urllib.request.urlopen(req, timeout=10) as res:
       pass
   except Exception as e:
     print(f'Lỗi gửi Pushover: {e}')
