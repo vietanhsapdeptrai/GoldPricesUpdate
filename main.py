@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from flask import Flask, redirect, render_template_string, request, url_for
@@ -19,24 +20,61 @@ BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
 ALLOWED_CHAT_ID = '5333698491'
 
 
+# HÀM TỰ ĐỘNG CÀO GIÁ VÀNG & BẠC TỪ NGUỒN THỊ TRƯỜNG
+def fetch_live_prices():
+  # Giá mặc định phòng trường hợp mạng lỗi (Vàng: VNĐ/chỉ, Bạc: VNĐ/lượng)
+  live_gold = 14270000
+  live_silver = 2247000
+
+  # 1. Fetch Giá Bạc Phú Quý
+  try:
+    req_silver = urllib.request.Request(
+        'https://phuquy.com.vn/bang-gia/bac',
+        headers={'User-Agent': 'Mozilla/5.0'},
+    )
+    with urllib.request.urlopen(req_silver, timeout=5) as res:
+      html = res.read().decode('utf-8')
+      # Tìm giá bán ra bạc 999
+      matches = re.findall(r'(\d{1,2}[\.,]\d{3}[\.,]\d{3})', html)
+      if matches:
+        # Lấy giá trị hợp lệ chuyển về số nguyên
+        p_val = int(matches[0].replace('.', '').replace(',', ''))
+        if 1500000 < p_val < 5000000:
+          live_silver = p_val
+  except Exception as e:
+    print(f'Lỗi fetch giá Bạc: {e}')
+
+  # 2. Fetch Giá Vàng Phú Quý / SJC
+  try:
+    req_gold = urllib.request.Request(
+        'https://phuquygroup.vn/giavang', headers={'User-Agent': 'Mozilla/5.0'}
+    )
+    with urllib.request.urlopen(req_gold, timeout=5) as res:
+      html = res.read().decode('utf-8')
+      matches = re.findall(r'(\d{2}[\.,]\d{3}[\.,]\d{3})', html)
+      if matches:
+        p_val = int(matches[0].replace('.', '').replace(',', ''))
+        if 8000000 < p_val < 30000000:  # Giá tính theo Chỉ
+          live_gold = p_val
+  except Exception as e:
+    print(f'Lỗi fetch giá Vàng: {e}')
+
+  return live_gold, live_silver
+
+
 def load_data():
   if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
       json.dump([], f)
+
   if not os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-      json.dump({'gold_price': 14270000, 'silver_price': 1200000}, f)
+      json.dump({'manual_gold': 0, 'manual_silver': 0}, f)
 
   with open(DATA_FILE, 'r', encoding='utf-8') as f:
     assets = json.load(f)
   with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
     config = json.load(f)
-
-  # Mặc định cấu hình giá nếu chưa có
-  if 'gold_price' not in config:
-    config['gold_price'] = 14270000
-  if 'silver_price' not in config:
-    config['silver_price'] = 1200000
 
   return assets, config
 
@@ -48,14 +86,31 @@ def save_data(assets, config):
     json.dump(config, f, ensure_ascii=False, indent=2)
 
 
+def get_effective_prices(config):
+  live_gold, live_silver = fetch_live_prices()
+
+  # Nếu người dùng có nhập giá thủ công (> 0) thì dùng giá thủ công, ngược lại dùng giá tự động
+  gold_price = (
+      config.get('manual_gold', 0)
+      if config.get('manual_gold', 0) > 0
+      else live_gold
+  )
+  silver_price = (
+      config.get('manual_silver', 0)
+      if config.get('manual_silver', 0) > 0
+      else live_silver
+  )
+
+  return gold_price, silver_price, live_gold, live_silver
+
+
 def generate_reports():
   assets, config = load_data()
   if not assets:
     msg_empty = '⚠️ Chưa có dữ liệu mua tài sản nào.'
     return msg_empty, msg_empty
 
-  gold_price = config.get('gold_price', 14270000)
-  silver_price = config.get('silver_price', 1200000)
+  gold_price, silver_price, _, _ = get_effective_prices(config)
 
   total_cost_all = 0
   total_val_all = 0
@@ -93,7 +148,6 @@ def generate_reports():
   )
   icon_total = '🎉' if total_profit_all >= 0 else '📉'
 
-  # Bản tin nhắn Telegram
   msg_telegram = (
       '🏆 *BÁO CÁO TÀI SẢN VÀNG & BẠC* 🏆\n'
       '───────────────────────\n'
@@ -108,7 +162,6 @@ def generate_reports():
       f' (`{margin_all:+.2f}%`)\n'
   )
 
-  # Bản tin nhắn Pushover
   msg_pushover = (
       f'💵 Giá Vàng: {gold_price:,.0f} đ/chỉ | ⚪ Giá Bạc:'
       f' {silver_price:,.0f} đ/lượng\n\n'
@@ -175,19 +228,34 @@ HTML_TEMPLATE = """
         <div class="bg-white rounded-xl shadow-sm p-6 flex flex-col lg:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-slate-800">🏆 Quản Lý Tài Sản Vàng & Bạc</h1>
-                <p class="text-slate-500 text-sm mt-1">Vàng (Đơn vị: <b>Chỉ</b>) | Bạc (Đơn vị: <b>Lượng</b>)</p>
+                <p class="text-slate-500 text-sm mt-1">
+                    Cập nhật <b>TỰ ĐỘNG</b> theo thời gian thực | Vàng (Chỉ) - Bạc (Lượng)
+                </p>
             </div>
             
             <form action="/update_prices" method="POST" class="flex flex-wrap items-center gap-3">
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-right">
-                    <span class="text-[10px] text-amber-700 font-semibold block">GIÁ VÀNG (VNĐ/CHỈ)</span>
-                    <input type="number" name="gold_price" value="{{ config.gold_price }}" class="w-28 text-right font-bold text-amber-600 bg-transparent focus:outline-none">
+                    <div class="flex justify-between text-[10px] text-amber-700 font-semibold mb-1 gap-2">
+                        <span>GIÁ VÀNG</span>
+                        {% if config.manual_gold > 0 %}<span class="text-rose-500">(Thủ công)</span>{% else %}<span class="text-emerald-600">(Tự động)</span>{% endif %}
+                    </div>
+                    <input type="number" name="gold_price" value="{{ gold_price }}" class="w-32 text-right font-bold text-amber-600 bg-transparent focus:outline-none">
                 </div>
+
                 <div class="bg-slate-100 border border-slate-300 rounded-lg p-2 text-right">
-                    <span class="text-[10px] text-slate-600 font-semibold block">GIÁ BẠC (VNĐ/LƯỢNG)</span>
-                    <input type="number" name="silver_price" value="{{ config.silver_price }}" class="w-28 text-right font-bold text-slate-700 bg-transparent focus:outline-none">
+                    <div class="flex justify-between text-[10px] text-slate-600 font-semibold mb-1 gap-2">
+                        <span>GIÁ BẠC</span>
+                        {% if config.manual_silver > 0 %}<span class="text-rose-500">(Thủ công)</span>{% else %}<span class="text-emerald-600">(Tự động)</span>{% endif %}
+                    </div>
+                    <input type="number" name="silver_price" value="{{ silver_price }}" class="w-32 text-right font-bold text-slate-700 bg-transparent focus:outline-none">
                 </div>
-                <button type="submit" class="bg-slate-800 text-white font-medium px-4 py-3 rounded-lg text-xs">Cập Nhật Giá</button>
+
+                <div class="flex flex-col gap-1">
+                    <button type="submit" class="bg-slate-800 text-white font-medium px-3 py-1.5 rounded-lg text-xs">Set Giá Mới</button>
+                    {% if config.manual_gold > 0 or config.manual_silver > 0 %}
+                        <a href="/reset_prices" class="text-center text-[11px] text-rose-500 font-semibold hover:underline">Reset Auto</a>
+                    {% endif %}
+                </div>
             </form>
         </div>
 
@@ -264,7 +332,7 @@ HTML_TEMPLATE = """
                                 </tr>
                             {% else %}
                                 {% for item in assets %}
-                                    {% set cur_p = config.gold_price if item.type == 'gold' else config.silver_price %}
+                                    {% set cur_p = gold_price if item.type == 'gold' else silver_price %}
                                     {% set unit = 'chỉ' if item.type == 'gold' else 'lượng' %}
                                     {% set cost = item.quantity * item.buy_price %}
                                     {% set val = item.quantity * cur_p %}
@@ -302,8 +370,7 @@ HTML_TEMPLATE = """
 @app.route('/')
 def home():
   assets, config = load_data()
-  gold_price = config.get('gold_price', 14270000)
-  silver_price = config.get('silver_price', 1200000)
+  gold_price, silver_price, _, _ = get_effective_prices(config)
 
   total_cost_all = 0
   total_val_all = 0
@@ -324,6 +391,8 @@ def home():
       HTML_TEMPLATE,
       assets=assets,
       config=config,
+      gold_price=gold_price,
+      silver_price=silver_price,
       total_cost_all=total_cost_all,
       total_val_all=total_val_all,
       total_profit_all=total_profit_all,
@@ -359,8 +428,17 @@ def delete_asset(index):
 @app.route('/update_prices', methods=['POST'])
 def update_prices():
   assets, config = load_data()
-  config['gold_price'] = float(request.form.get('gold_price', 0))
-  config['silver_price'] = float(request.form.get('silver_price', 0))
+  config['manual_gold'] = float(request.form.get('gold_price', 0))
+  config['manual_silver'] = float(request.form.get('silver_price', 0))
+  save_data(assets, config)
+  return redirect(url_for('home'))
+
+
+@app.route('/reset_prices')
+def reset_prices():
+  assets, config = load_data()
+  config['manual_gold'] = 0
+  config['manual_silver'] = 0
   save_data(assets, config)
   return redirect(url_for('home'))
 
@@ -393,7 +471,6 @@ def telegram_webhook():
 def cron_send():
   msg_tg, msg_push = generate_reports()
 
-  # Gửi đồng thời Pushover & Telegram
   send_pushover('🏆 BÁO CÁO TÀI SẢN VÀNG & BẠC', msg_push)
   send_telegram(ALLOWED_CHAT_ID, msg_tg)
 
