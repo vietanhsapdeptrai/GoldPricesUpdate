@@ -12,7 +12,7 @@ app = Flask(__name__)
 # THÔNG TIN KẾT NỐI GITHUB API (ĐỂ LƯU DATA VĨNH VIỄN)
 # ===================================================
 GITHUB_TOKEN = os.environ.get(
-    'GITHUB_TOKEN', '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'
+    'GITHUB_TOKEN', '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'
 )
 GITHUB_REPO = os.environ.get(
     'GITHUB_REPO', 'vietanhsapdeptrai/GoldPricesUpdate'
