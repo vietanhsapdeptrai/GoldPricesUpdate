@@ -4,19 +4,11 @@ import re
 import urllib.parse
 import urllib.request
 from flask import Flask, redirect, render_template_string, request, url_for
-from pymongo import MongoClient
 
 app = Flask(__name__)
 
-# ===================================================
-# THÔNG TIN KẾT NỐI & BẢO MẬT
-# ===================================================
-MONGO_URI = 'mongodb+srv://hoangtuskun_db_user:trGN5SifuFD0mQHz@updategoldprices.rqqh8rs.mongodb.net/?appName=updateGoldPrices'
-
-client = MongoClient(MONGO_URI)
-db = client['gold_db']
-assets_col = db['assets']
-config_col = db['config']
+DATA_FILE = 'data.json'
+CONFIG_FILE = 'config.json'
 
 PUSHOVER_USER_KEY = 'urkreqgfxzi1vxj6cya3vhfdkiiqq6'
 PUSHOVER_APP_TOKEN = 'akp3knry9sbuubxumifqbu21etmux6'
@@ -71,13 +63,34 @@ def fetch_live_prices():
 
 
 def load_data():
-  assets = list(assets_col.find({}, {'_id': 0}))
-  cfg = config_col.find_one({'_id': 'app_config'})
-  if not cfg:
-    cfg = {'_id': 'app_config', 'manual_gold': 0, 'manual_silver': 0}
-    config_col.insert_one(cfg)
+  assets = []
+  config = {'manual_gold': 0, 'manual_silver': 0}
 
-  return assets, cfg
+  try:
+    if os.path.exists(DATA_FILE):
+      with open(DATA_FILE, 'r', encoding='utf-8') as f:
+        assets = json.load(f)
+  except Exception:
+    assets = []
+
+  try:
+    if os.path.exists(CONFIG_FILE):
+      with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+  except Exception:
+    config = {'manual_gold': 0, 'manual_silver': 0}
+
+  return assets, config
+
+
+def save_data(assets, config):
+  try:
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+      json.dump(assets, f, ensure_ascii=False, indent=2)
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+      json.dump(config, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f'Lỗi ghi file: {e}')
 
 
 def get_effective_prices(config):
@@ -369,7 +382,7 @@ HTML_TEMPLATE = """
                                             {% if profit >= 0 %}+{% endif %}{{ "{:,.0f}".format(profit) }} đ
                                         </td>
                                         <td class="p-3 text-center">
-                                            <a href="/delete/{{ item.date }}/{{ item.buy_price }}" class="text-rose-500 font-semibold text-xs">Xóa</a>
+                                            <a href="/delete/{{ loop.index0 }}" class="text-rose-500 font-semibold text-xs">Xóa</a>
                                         </td>
                                     </tr>
                                 {% endfor %}
@@ -435,6 +448,7 @@ def home():
 
 @app.route('/add', methods=['POST'])
 def add_asset():
+  assets, config = load_data()
   new_asset = {
       'type': request.form.get('type', 'gold'),
       'date': request.form.get('date'),
@@ -443,35 +457,35 @@ def add_asset():
       'note': request.form.get('note', ''),
   }
   if new_asset['quantity'] > 0 and new_asset['buy_price'] > 0:
-    assets_col.insert_one(new_asset)
+    assets.append(new_asset)
+    save_data(assets, config)
   return redirect(url_for('home'))
 
 
-@app.route('/delete/<date>/<float:buy_price>')
-def delete_asset(date, buy_price):
-  assets_col.delete_one({'date': date, 'buy_price': buy_price})
+@app.route('/delete/<int:index>')
+def delete_asset(index):
+  assets, config = load_data()
+  if 0 <= index < len(assets):
+    assets.pop(index)
+    save_data(assets, config)
   return redirect(url_for('home'))
 
 
 @app.route('/update_prices', methods=['POST'])
 def update_prices():
-  manual_gold = float(request.form.get('gold_price', 0))
-  manual_silver = float(request.form.get('silver_price', 0))
-  config_col.update_one(
-      {'_id': 'app_config'},
-      {'$set': {'manual_gold': manual_gold, 'manual_silver': manual_silver}},
-      upsert=True,
-  )
+  assets, config = load_data()
+  config['manual_gold'] = float(request.form.get('gold_price', 0))
+  config['manual_silver'] = float(request.form.get('silver_price', 0))
+  save_data(assets, config)
   return redirect(url_for('home'))
 
 
 @app.route('/reset_prices')
 def reset_prices():
-  config_col.update_one(
-      {'_id': 'app_config'},
-      {'$set': {'manual_gold': 0, 'manual_silver': 0}},
-      upsert=True,
-  )
+  assets, config = load_data()
+  config['manual_gold'] = 0
+  config['manual_silver'] = 0
+  save_data(assets, config)
   return redirect(url_for('home'))
 
 
