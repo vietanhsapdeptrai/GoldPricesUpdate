@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -7,13 +8,74 @@ from flask import Flask, redirect, render_template_string, request, url_for
 
 app = Flask(__name__)
 
-DATA_FILE = 'data.json'
-CONFIG_FILE = 'config.json'
+# ===================================================
+# THÔNG TIN KẾT NỐI GITHUB API (ĐỂ LƯU DATA VĨNH VIỄN)
+# ===================================================
+GITHUB_TOKEN = os.environ.get(
+    'GITHUB_TOKEN', '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'
+)
+GITHUB_REPO = os.environ.get(
+    'GITHUB_REPO', 'vietanhsapdeptrai/GoldPricesUpdate'
+)  # Thay username/repo
+GITHUB_BRANCH = 'main'  # 'main' hoặc 'master'
 
 PUSHOVER_USER_KEY = 'urkreqgfxzi1vxj6cya3vhfdkiiqq6'
 PUSHOVER_APP_TOKEN = 'akp3knry9sbuubxumifqbu21etmux6'
 BOT_TOKEN = '8359797934:AAGE5fnJ7GYya_cmNuSVcSXjeF_FlaRIbiA'
 ALLOWED_CHAT_ID = '5333698491'
+
+
+# HÀM ĐỌC FILE TỪ GITHUB
+def github_read_file(filename):
+  try:
+    url = f'https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}'
+    req = urllib.request.Request(
+        url,
+        headers={
+            'Authorization': f'token {GITHUB_TOKEN}',
+            'User-Agent': 'PythonApp',
+        },
+    )
+    with urllib.request.urlopen(req, timeout=5) as res:
+      data = json.loads(res.read().decode('utf-8'))
+      content = base64.b64decode(data['content']).decode('utf-8')
+      return json.loads(content), data['sha']
+  except Exception as e:
+    print(f'Lỗi đọc {filename} từ GitHub: {e}')
+    if filename == 'config.json':
+      return {'manual_gold': 0, 'manual_silver': 0}, None
+    return [], None
+
+
+# HÀM GHI FILE LÊN GITHUB
+def github_write_file(filename, content_obj, sha=None):
+  try:
+    url = f'https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}'
+    content_str = json.dumps(content_obj, ensure_ascii=False, indent=2)
+    content_b64 = base64.b64encode(content_str.encode('utf-8')).decode('utf-8')
+
+    payload = {
+        'message': f'Update {filename} via Web App',
+        'content': content_b64,
+        'branch': GITHUB_BRANCH,
+    }
+    if sha:
+      payload['sha'] = sha
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'token {GITHUB_TOKEN}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'PythonApp',
+        },
+        method='PUT',
+    )
+    with urllib.request.urlopen(req, timeout=5) as res:
+      pass
+  except Exception as e:
+    print(f'Lỗi ghi {filename} lên GitHub: {e}')
 
 
 def fetch_live_prices():
@@ -63,34 +125,9 @@ def fetch_live_prices():
 
 
 def load_data():
-  assets = []
-  config = {'manual_gold': 0, 'manual_silver': 0}
-
-  try:
-    if os.path.exists(DATA_FILE):
-      with open(DATA_FILE, 'r', encoding='utf-8') as f:
-        assets = json.load(f)
-  except Exception:
-    assets = []
-
-  try:
-    if os.path.exists(CONFIG_FILE):
-      with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-  except Exception:
-    config = {'manual_gold': 0, 'manual_silver': 0}
-
+  assets, _ = github_read_file('data.json')
+  config, _ = github_read_file('config.json')
   return assets, config
-
-
-def save_data(assets, config):
-  try:
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-      json.dump(assets, f, ensure_ascii=False, indent=2)
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-      json.dump(config, f, ensure_ascii=False, indent=2)
-  except Exception as e:
-    print(f'Lỗi ghi file: {e}')
 
 
 def get_effective_prices(config):
@@ -448,7 +485,7 @@ def home():
 
 @app.route('/add', methods=['POST'])
 def add_asset():
-  assets, config = load_data()
+  assets, sha = github_read_file('data.json')
   new_asset = {
       'type': request.form.get('type', 'gold'),
       'date': request.form.get('date'),
@@ -458,34 +495,34 @@ def add_asset():
   }
   if new_asset['quantity'] > 0 and new_asset['buy_price'] > 0:
     assets.append(new_asset)
-    save_data(assets, config)
+    github_write_file('data.json', assets, sha)
   return redirect(url_for('home'))
 
 
 @app.route('/delete/<int:index>')
 def delete_asset(index):
-  assets, config = load_data()
+  assets, sha = github_read_file('data.json')
   if 0 <= index < len(assets):
     assets.pop(index)
-    save_data(assets, config)
+    github_write_file('data.json', assets, sha)
   return redirect(url_for('home'))
 
 
 @app.route('/update_prices', methods=['POST'])
 def update_prices():
-  assets, config = load_data()
+  config, sha = github_read_file('config.json')
   config['manual_gold'] = float(request.form.get('gold_price', 0))
   config['manual_silver'] = float(request.form.get('silver_price', 0))
-  save_data(assets, config)
+  github_write_file('config.json', config, sha)
   return redirect(url_for('home'))
 
 
 @app.route('/reset_prices')
 def reset_prices():
-  assets, config = load_data()
+  config, sha = github_read_file('config.json')
   config['manual_gold'] = 0
   config['manual_silver'] = 0
-  save_data(assets, config)
+  github_write_file('config.json', config, sha)
   return redirect(url_for('home'))
 
 
