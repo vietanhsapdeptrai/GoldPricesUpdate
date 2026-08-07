@@ -28,14 +28,14 @@ ALLOWED_CHAT_ID = '5333698491'
 # HÀM ĐỌC FILE TỪ GITHUB
 def github_read_file(filename):
   try:
+    token = GITHUB_TOKEN.strip() if GITHUB_TOKEN else ''
     url = f'https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}'
-    req = urllib.request.Request(
-        url,
-        headers={
-            'Authorization': f'token {GITHUB_TOKEN}',
-            'User-Agent': 'PythonApp',
-        },
-    )
+
+    headers = {'User-Agent': 'PythonApp'}
+    if token:
+      headers['Authorization'] = f'Bearer {token}'
+
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=5) as res:
       data = json.loads(res.read().decode('utf-8'))
       content = base64.b64decode(data['content']).decode('utf-8')
@@ -50,6 +50,7 @@ def github_read_file(filename):
 # HÀM GHI FILE LÊN GITHUB
 def github_write_file(filename, content_obj, sha=None):
   try:
+    token = GITHUB_TOKEN.strip() if GITHUB_TOKEN else ''
     url = f'https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}'
     content_str = json.dumps(content_obj, ensure_ascii=False, indent=2)
     content_b64 = base64.b64encode(content_str.encode('utf-8')).decode('utf-8')
@@ -62,14 +63,14 @@ def github_write_file(filename, content_obj, sha=None):
     if sha:
       payload['sha'] = sha
 
+    headers = {'Content-Type': 'application/json', 'User-Agent': 'PythonApp'}
+    if token:
+      headers['Authorization'] = f'Bearer {token}'
+
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode('utf-8'),
-        headers={
-            'Authorization': f'token {GITHUB_TOKEN}',
-            'Content-Type': 'application/json',
-            'User-Agent': 'PythonApp',
-        },
+        headers=headers,
         method='PUT',
     )
     with urllib.request.urlopen(req, timeout=5) as res:
